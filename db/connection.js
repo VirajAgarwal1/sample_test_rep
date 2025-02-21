@@ -1,9 +1,76 @@
 import * as couchbase from 'couchbase'
 
-const options = { username: process.env.CB_USER, password: process.env.CB_PASS }
-const cluster = new couchbase.Cluster(process.env.CB_URL, options)
-const bucket = cluster.bucket(process.env.CB_BUCKET)
-const defaultScope = bucket.scope('_default')
-const profileCollection = defaultScope.collection('profile')
+const DB_USERNAME = process.env.DB_USERNAME
+const DB_PASSWORD = process.env.DB_PASSWORD
+const DB_CONN_STR = process.env.DB_CONN_STR
+const DB_BUCKET_NAME = process.env.DB_BUCKET_NAME
 
-module.exports = { couchbase, cluster, profileCollection }
+if (!DB_USERNAME) {
+  throw new Error(
+    'Please define the DB_USERNAME environment variable inside dev.env',
+  )
+}
+
+if (!DB_PASSWORD) {
+  throw new Error(
+    'Please define the DB_PASSWORD environment variable inside dev.env',
+  )
+}
+
+if (!DB_CONN_STR) {
+  throw new Error(
+    'Please define the DB_CONN_STR environment variable inside dev.env',
+  )
+}
+
+if (!DB_BUCKET_NAME) {
+  throw new Error(
+    'Please define the DB_BUCKET_NAME environment variable inside dev.env',
+  )
+}
+
+/**
+ * Global is used here to maintain a cached connection across hot reloads
+ * in development. This prevents connections growing exponentially
+ * during API Route usage.
+ */
+let cached = global.couchbase
+
+if (!cached) {
+  cached = global.couchbase = { conn: null }
+}
+
+async function createCouchbaseCluster() {
+  if (cached.conn) {
+    return cached.conn
+  }
+
+  // Use wan profile to avoid latency issues
+  cached.conn = await couchbase.connect(DB_CONN_STR, {
+    username: DB_USERNAME,
+    password: DB_PASSWORD,
+    configProfile: 'wanDevelopment',
+  })
+
+  return cached.conn
+}
+
+export async function connectToDatabase() {
+  const cluster = await createCouchbaseCluster()
+  const bucket = cluster.bucket(DB_BUCKET_NAME)
+  const scope = bucket.scope('inventory')
+  const airlineCollection = bucket.scope('inventory').collection('airline')
+  const airportCollection = bucket.scope('inventory').collection('airport')
+  const routeCollection = bucket.scope('inventory').collection('route')
+
+  let dbConnection = {
+    cluster,
+    bucket,
+    scope,
+    airlineCollection,
+    airportCollection,
+    routeCollection,
+  }
+
+  return dbConnection
+}
